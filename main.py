@@ -14,6 +14,9 @@ def main(food_name, provider_name):
     else:
         raise ValueError("No such provider: {}".format(provider_name))
     food = provider.get_food_nutrition_facts(food_name)
+    if food is None:
+        print("food '{}' not found".format(food_name))
+        return
     for key, field in food.fields.items():
         print("{}: {}".format(key, field.value))
 
