@@ -1,4 +1,5 @@
 from pint import UnitRegistry
+from pint.quantity import Quantity
 
 
 def get_eu_default_units():
@@ -22,11 +23,13 @@ class BaseFoodNutritionFacts(object):
 
     def __init__(self, **kwargs):
         self.fields = {
-            attr: field for attr, field in self.__dict__.items()
+            attr: field
+            for attr, field
+            in ((attr, getattr(self, attr)) for attr in dir(self))
             if isinstance(field, NutritionFactsField)}
-        for key in kwargs:
+        for key, value in kwargs.items():
             if key in self.fields:
-                self.fields[key].value = kwargs[key]
+                self.fields[key].value = value
 
 
 class NutritionFactsField(object):
@@ -45,6 +48,9 @@ class NutritionFactsField(object):
         self.original_value = value
         if value is None:
             self.raw_value = None
+            return
+        if not isinstance(value, Quantity):
+            self.raw_value = value
             return
         self.raw_value = value.to(self.unit)
         # may raise pint.pint.DimensionalityError if value provided in

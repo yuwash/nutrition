@@ -8,6 +8,8 @@ pint = "*"
 beautifulsoup4 = "*"
 requests = "*"
 lxml = "*"
+appdirs = "*"
+dataset = "*"
 
 [dev-packages]
 
