@@ -16,9 +16,11 @@ def main(food_name, provider_name):
     food = provider.get_food_nutrition_facts(food_name)
     if food is None:
         print("food '{}' not found".format(food_name))
+        print("Did you mean:")
+        print("\n".join(provider.query_food_names(food_name)[:10]))
         return
-    for key, field in food.fields.items():
-        print("{}: {}".format(key, field.value))
+    for key, field in food.items():
+        print("{}: {:~}".format(key.name, field.quantity))
 
 
 if __name__ == "__main__":

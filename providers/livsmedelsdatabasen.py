@@ -6,7 +6,7 @@ from appdirs import user_data_dir
 from bs4 import BeautifulSoup
 import dataset
 import requests
-from nutrition import MacroFoodNutritionFacts
+import nutrition
 
 
 class LivsmedelsdatabasenNutritionProvider(object):
@@ -17,7 +17,7 @@ class LivsmedelsdatabasenNutritionProvider(object):
         data_path, "livsmedelsdatabasen_{api_method}_{version}")
 
     api_url = "http://www7.slv.se/apilivsmedel/LivsmedelService.svc/Livsmedel/"
-    api_version = "20190101"
+    api_version = "20230101"
     api_url_suffixes = dict(
         naringsvarde="Naringsvarde/",
         klassificering="Klassificering/",
@@ -26,15 +26,24 @@ class LivsmedelsdatabasenNutritionProvider(object):
         number="Nummer",
         name="Namn",
     )
-    nutrition_facts_forkortning = dict(
-        energy="Enkj",
-        fat="Fett",
-        saturates="Mfet",
-        carbohydrates="Kolh",
-        sugars="Mono/disack",
-        protein="Prot",
-        salt="NaCl",
-    )
+    nutrition_facts_forkortning = {
+        nutrition.NutritionFactsAttr.energy: "Ener",
+        nutrition.NutritionFactsAttr.fat: "Fett",
+        nutrition.NutritionFactsAttr.saturates: "Mfet",
+        nutrition.NutritionFactsAttr.carbohydrates: "Kolh",
+        nutrition.NutritionFactsAttr.sugars: "Mono/disack",
+        nutrition.NutritionFactsAttr.protein: "Prot",
+        nutrition.NutritionFactsAttr.phosphorous: "P",
+        nutrition.NutritionFactsAttr.iodine: "I",
+        nutrition.NutritionFactsAttr.iron: "Fe",
+        nutrition.NutritionFactsAttr.calcium: "Ca",
+        nutrition.NutritionFactsAttr.potassium: "K",
+        nutrition.NutritionFactsAttr.magnesium: "Mg",
+        nutrition.NutritionFactsAttr.sodium: "Na",
+        nutrition.NutritionFactsAttr.salt: "NaCl",
+        nutrition.NutritionFactsAttr.selenium: "Se",
+        nutrition.NutritionFactsAttr.zinc: "Zn",
+    }
 
     def __init__(self):
         if not os.path.exists(self.data_path):
@@ -55,8 +64,7 @@ class LivsmedelsdatabasenNutritionProvider(object):
         return data
 
     @staticmethod
-    def get_nutrition_facts_value(food_nutrition_facts_soup):
-        raw_value = food_nutrition_facts_soup.find("Varde").string
+    def get_nutrition_facts_value(raw_value):
         return float(
             raw_value.replace(",", ".", 1)  # European format
             .replace("\xa0", "")  # non-breaking space
@@ -71,11 +79,21 @@ class LivsmedelsdatabasenNutritionProvider(object):
                 continue
             data = self.get_basic_food_data(food_elem)
             data.update(**{
-                key: self.get_nutrition_facts_value(
-                    nutrition_facts_elem.find(
-                        "Forkortning", string=forkortning).parent)
+                key.name: self.get_nutrition_facts_value(value_elem.string)
                 for key, forkortning
                 in self.nutrition_facts_forkortning.items()
+                if (
+                    parent := next((
+                        elem.parent for elem
+                        in nutrition_facts_elem.find_all(
+                            "Forkortning", string=forkortning)
+                        if (value_elem := elem.parent.find("Varde"))
+                        and elem.parent.find(
+                            "Enhet",
+                            string="{:~}".format(nutrition.DEFAULT_UNITS[key])
+                        )
+                    ), None)
+                )
             })
             yield data
 
@@ -85,9 +103,17 @@ class LivsmedelsdatabasenNutritionProvider(object):
         entry = table.find_one(name=food_name)
         if entry is None:
             return None
-        for attr in {"id", "name", "number"}:
-            del entry[attr]
-        return MacroFoodNutritionFacts(**entry)
+        return {
+            attr: nutrition.NutritionFactsField(attr, value)
+            for attr in nutrition.NutritionFactsAttr
+            if (value := entry.get(attr.name))
+        }
+
+    def query_food_names(self, keyword):
+        table_name = "food_nutrition_facts"
+        table = self.db[table_name]
+        entries = table.find(name={"like": "%{}%".format(keyword)})
+        return [entry["name"] for entry in entries]
 
     def get_cache_filename(self, api_method):
         return self.cache_filename_pattern.format(
@@ -108,12 +134,13 @@ class LivsmedelsdatabasenNutritionProvider(object):
         created_files = {}
         if os.path.exists(self.db_path):
             return created_files
+        print("Preparing cache {}".format(self.db_path))
         for api_method in self.api_url_suffixes:
             cache_filename = self.get_cache_filename(api_method)
             if os.path.exists(cache_filename):
                 continue
             response = requests.get(self.get_full_url(api_method))
-            if response.status_code != 200:
+            if response.status_code != requests.codes.ok:
                 soup = BeautifulSoup(response.text, "html.parser")
                 print("".join(soup.find("body").strings), file=sys.stderr)
                 raise RuntimeError(
@@ -121,6 +148,7 @@ class LivsmedelsdatabasenNutritionProvider(object):
             with open(cache_filename, 'wb') as cache_file:
                 cache_file.write(response.content)
                 created_files[api_method] = cache_filename
+        print("Downloaded. Importing into database…")
         table_name = "food_nutrition_facts"
         table = self.db[table_name]
         table.insert_many(tuple(self.iter_food_nutrition_facts()))

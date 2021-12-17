@@ -1,67 +1,62 @@
-from pint import UnitRegistry
-from pint.quantity import Quantity
+import enum
+import dataclasses
+import pint
+
+unit_registry = pint.UnitRegistry()
 
 
-def get_eu_default_units():
-    units = dict(energy=unit_registry.kJ)
-    units["fat"] = \
-        units["saturates"] = \
-        units["carbohydrates"] = \
-        units["sugars"] = \
-        units["protein"] = \
-        units["salt"] = \
-        unit_registry.g
-    return units
+class NutritionFactsAttr(enum.Enum):
+    energy = enum.auto()
+    fat = enum.auto()
+    saturates = enum.auto()
+    carbohydrates = enum.auto()
+    sugars = enum.auto()
+    protein = enum.auto()
+    phosphorous = enum.auto()
+    iodine = enum.auto()
+    iron = enum.auto()
+    calcium = enum.auto()
+    potassium = enum.auto()
+    magnesium = enum.auto()
+    sodium = enum.auto()
+    salt = enum.auto()
+    selenium = enum.auto()
+    zinc = enum.auto()
 
 
-unit_registry = UnitRegistry()
-default_units = get_eu_default_units()
+DEFAULT_UNITS = {
+    NutritionFactsAttr.energy: unit_registry.kJ,
+    NutritionFactsAttr.fat: unit_registry.g,
+    NutritionFactsAttr.saturates: unit_registry.g,
+    NutritionFactsAttr.carbohydrates: unit_registry.g,
+    NutritionFactsAttr.sugars: unit_registry.g,
+    NutritionFactsAttr.protein: unit_registry.g,
+    NutritionFactsAttr.phosphorous: unit_registry.mg,
+    NutritionFactsAttr.iodine: unit_registry.μg,
+    NutritionFactsAttr.iron: unit_registry.mg,
+    NutritionFactsAttr.calcium: unit_registry.mg,
+    NutritionFactsAttr.potassium: unit_registry.mg,
+    NutritionFactsAttr.magnesium: unit_registry.mg,
+    NutritionFactsAttr.sodium: unit_registry.mg,
+    NutritionFactsAttr.salt: unit_registry.g,
+    NutritionFactsAttr.selenium: unit_registry.μg,
+    NutritionFactsAttr.zinc: unit_registry.mg,
+}
 
 
-class BaseFoodNutritionFacts(object):
-    """Nutrition facts of a food item"""
-
-    def __init__(self, **kwargs):
-        self.fields = {
-            attr: field
-            for attr, field
-            in ((attr, getattr(self, attr)) for attr in dir(self))
-            if isinstance(field, NutritionFactsField)}
-        for key, value in kwargs.items():
-            if key in self.fields:
-                self.fields[key].value = value
-
-
-class NutritionFactsField(object):
-    def __init__(self, unit, default=None):
-        self.unit = unit
-        self.value = default
+@dataclasses.dataclass
+class NutritionFactsField:
+    """Nutrition facts attribute data of a food item"""
+    attr: NutritionFactsAttr
+    raw_value: float
+    raw_unit: pint.Unit | None = None
 
     @property
-    def value(self):
-        if self.raw_value is None:
-            return
-        return self.raw_value * self.unit
-
-    @value.setter
-    def value(self, value):
-        self.original_value = value
-        if value is None:
-            self.raw_value = None
-            return
-        if not isinstance(value, Quantity):
-            self.raw_value = value
-            return
-        self.raw_value = value.to(self.unit)
+    def quantity(self) -> pint.Quantity:
+        default_unit = DEFAULT_UNITS[self.attr]
+        return (
+            (self.raw_value * self.raw_unit).to(default_unit)
+            if self.raw_unit else self.raw_value * default_unit
+        )
         # may raise pint.pint.DimensionalityError if value provided in
         # an incompatible unit
-
-
-class MacroFoodNutritionFacts(BaseFoodNutritionFacts):
-    energy = NutritionFactsField(default_units["energy"])
-    fat = NutritionFactsField(default_units["fat"])
-    saturates = NutritionFactsField(default_units["saturates"])
-    carbohydrates = NutritionFactsField(default_units["carbohydrates"])
-    sugars = NutritionFactsField(default_units["sugars"])
-    protein = NutritionFactsField(default_units["protein"])
-    salt = NutritionFactsField(default_units["salt"])
